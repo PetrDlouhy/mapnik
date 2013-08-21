@@ -21,6 +21,7 @@
  *****************************************************************************/
 #include <boost/python.hpp>
 #include <boost/python/stl_iterator.hpp>
+#include <boost/noncopyable.hpp>
 
 #include <mapnik/text_properties.hpp>
 #include <mapnik/text_placements/simple.hpp>
@@ -83,7 +84,7 @@ struct NodeWrap: formatting::node, wrapper<formatting::node>
 
     }
 
-    void apply(char_properties const& p, Feature const& feature, processed_text &output) const
+    void apply(char_properties const& p, feature_impl const& feature, processed_text &output) const
     {
         python_block_auto_unblock b;
         this->get_override("apply")(ptr(&p), ptr(&feature), ptr(&output));
@@ -121,7 +122,7 @@ struct TextNodeWrap: formatting::text_node, wrapper<formatting::text_node>
 
     }
 
-    virtual void apply(char_properties const& p, Feature const& feature, processed_text &output) const
+    virtual void apply(char_properties const& p, feature_impl const& feature, processed_text &output) const
     {
         if(override o = this->get_override("apply"))
         {
@@ -134,7 +135,7 @@ struct TextNodeWrap: formatting::text_node, wrapper<formatting::text_node>
         }
     }
 
-    void default_apply(char_properties const& p, Feature const& feature, processed_text &output) const
+    void default_apply(char_properties const& p, feature_impl const& feature, processed_text &output) const
     {
         formatting::text_node::apply(p, feature, output);
     }
@@ -142,7 +143,7 @@ struct TextNodeWrap: formatting::text_node, wrapper<formatting::text_node>
 
 struct FormatNodeWrap: formatting::format_node, wrapper<formatting::format_node>
 {
-    virtual void apply(char_properties const& p, Feature const& feature, processed_text &output) const
+    virtual void apply(char_properties const& p, feature_impl const& feature, processed_text &output) const
     {
         if(override o = this->get_override("apply"))
         {
@@ -155,7 +156,7 @@ struct FormatNodeWrap: formatting::format_node, wrapper<formatting::format_node>
         }
     }
 
-    void default_apply(char_properties const& p, Feature const& feature, processed_text &output) const
+    void default_apply(char_properties const& p, feature_impl const& feature, processed_text &output) const
     {
         formatting::format_node::apply(p, feature, output);
     }
@@ -163,7 +164,7 @@ struct FormatNodeWrap: formatting::format_node, wrapper<formatting::format_node>
 
 struct ExprFormatWrap: formatting::expression_format, wrapper<formatting::expression_format>
 {
-    virtual void apply(char_properties const& p, Feature const& feature, processed_text &output) const
+    virtual void apply(char_properties const& p, feature_impl const& feature, processed_text &output) const
     {
         if(override o = this->get_override("apply"))
         {
@@ -176,7 +177,7 @@ struct ExprFormatWrap: formatting::expression_format, wrapper<formatting::expres
         }
     }
 
-    void default_apply(char_properties const& p, Feature const& feature, processed_text &output) const
+    void default_apply(char_properties const& p, feature_impl const& feature, processed_text &output) const
     {
         formatting::expression_format::apply(p, feature, output);
     }
@@ -193,14 +194,17 @@ struct ListNodeWrap: formatting::list_node, wrapper<formatting::list_node>
     ListNodeWrap(object l) : formatting::list_node(), wrapper<formatting::list_node>()
     {
         stl_input_iterator<formatting::node_ptr> begin(l), end;
-        children_.insert(children_.end(), begin, end);
+        while (begin != end)
+        {
+           children_.push_back(*begin);
+           ++begin;
+        }
     }
 
     /* TODO: Add constructor taking variable number of arguments.
        http://wiki.python.org/moin/boost.python/HowTo#A.22Raw.22_function */
 
-
-    virtual void apply(char_properties const& p, Feature const& feature, processed_text &output) const
+    virtual void apply(char_properties const& p, feature_impl const& feature, processed_text &output) const
     {
         if(override o = this->get_override("apply"))
         {
@@ -213,7 +217,7 @@ struct ListNodeWrap: formatting::list_node, wrapper<formatting::list_node>
         }
     }
 
-    void default_apply(char_properties const& p, Feature const& feature, processed_text &output) const
+    void default_apply(char_properties const& p, feature_impl const& feature, processed_text &output) const
     {
         formatting::list_node::apply(p, feature, output);
     }
@@ -339,6 +343,11 @@ void export_text_placement()
         .value("CAPITALIZE",CAPITALIZE)
         ;
 
+    enumeration_<halo_rasterizer_e>("halo_rasterizer")
+        .value("FULL",HALO_RASTERIZER_FULL)
+        .value("FAST",HALO_RASTERIZER_FAST)
+        ;
+
     class_<text_symbolizer>("TextSymbolizer",
                             init<>())
         .def(init<expression_ptr, std::string const&, unsigned, color const&>())
@@ -362,6 +371,10 @@ void export_text_placement()
                       &text_symbolizer::clip,
                       &text_symbolizer::set_clip,
                       "Set/get the text geometry's clipping status")
+        .add_property("halo_rasterizer",
+                      &text_symbolizer::get_halo_rasterizer,
+                      &text_symbolizer::set_halo_rasterizer,
+                      "Set/get the halo rasterizer method")
         ;
 
 
@@ -402,9 +415,9 @@ void export_text_placement()
     class_with_converter<char_properties>
         ("CharProperties")
         .def_readwrite_convert("text_transform", &char_properties::text_transform)
+        .def_readwrite_convert("fontset", &char_properties::fontset)
         .def(init<char_properties const&>()) //Copy constructor
         .def_readwrite("face_name", &char_properties::face_name)
-        .def_readwrite("fontset", &char_properties::fontset)
         .def_readwrite("text_size", &char_properties::text_size)
         .def_readwrite("character_spacing", &char_properties::character_spacing)
         .def_readwrite("line_spacing", &char_properties::line_spacing)

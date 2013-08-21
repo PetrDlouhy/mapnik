@@ -26,29 +26,27 @@
 // mapnik
 #include <mapnik/char_info.hpp>
 #include <mapnik/pixel_position.hpp>
+#include <mapnik/noncopyable.hpp>
+#include <mapnik/value_types.hpp>
 
 //stl
 #include <vector>
 
 // boost
-#include <boost/utility.hpp>
 #include <boost/shared_ptr.hpp>
-
-// uci
-#include <unicode/unistr.h>
 
 namespace mapnik
 {
 
-class string_info : private boost::noncopyable
+class string_info : private mapnik::noncopyable
 {
 protected:
     typedef std::vector<char_info> characters_t;
     characters_t characters_;
-    UnicodeString text_;
+    mapnik::value_unicode_string text_;
     bool is_rtl;
 public:
-    string_info(UnicodeString const& text)
+    string_info(mapnik::value_unicode_string const& text)
         : characters_(),
           text_(text),
           is_rtl(false)
@@ -69,7 +67,7 @@ public:
         characters_.push_back(info);
     }
 
-    void add_text(UnicodeString text)
+    void add_text(mapnik::value_unicode_string const& text)
     {
         text_ += text;
     }
@@ -99,21 +97,22 @@ public:
         return at(i);
     }
 
-    UnicodeString const&  get_string() const
+    mapnik::value_unicode_string const& get_string() const
     {
         return text_;
     }
 
     bool has_line_breaks() const
     {
+        // uint16_t
         UChar break_char = '\n';
         return (text_.indexOf(break_char) >= 0);
     }
 
-    /** Resets object to initial state. */
-    void clear(void)
+    // Resets object to initial state.
+    void clear()
     {
-        text_ = "";
+        text_.remove();
         characters_.clear();
     }
 };
@@ -121,8 +120,8 @@ public:
 typedef char_info const * char_info_ptr;
 
 
-/** List of all characters and their positions and formats for a placement. */
-class text_path : boost::noncopyable
+// List of all characters and their positions and formats for a placement.
+class text_path : mapnik::noncopyable
 {
     struct character_node
     {
@@ -140,12 +139,12 @@ class text_path : boost::noncopyable
 
         ~character_node() {}
 
-        void vertex(char_info_ptr *c_, double *x_, double *y_, double *angle_) const
+        void vertex(char_info_ptr & c_, double & x_, double  & y_, double & angle_) const
         {
-            *c_ = c;
-            *x_ = pos.x;
-            *y_ = pos.y;
-            *angle_ = angle;
+            c_ = c;
+            x_ = pos.x;
+            y_ = pos.y;
+            angle_ = angle;
         }
     };
 
@@ -172,7 +171,7 @@ public:
     }
 
     /** Return node. Always returns a new node. Has no way to report that there are no more nodes. */
-    void vertex(char_info_ptr *c, double *x, double *y, double *angle) const
+    void vertex(char_info_ptr & c, double & x, double & y, double & angle) const
     {
         nodes_[itr_++].vertex(c, x, y, angle);
     }

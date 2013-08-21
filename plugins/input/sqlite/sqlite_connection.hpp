@@ -29,7 +29,6 @@
 // mapnik
 #include <mapnik/datasource.hpp>
 #include <mapnik/params.hpp>
-#include <mapnik/sql_utils.hpp>
 #include <mapnik/timer.hpp>
 
 // boost
@@ -63,7 +62,6 @@ public:
 #endif
         const int rc = sqlite3_open_v2 (file_.c_str(), &db_, mode, 0);
 #else
-#warning "Mapnik's sqlite plugin is compiling against a version of sqlite older than 3.5.x which may make rendering slow..."
         const int rc = sqlite3_open (file_.c_str(), &db_);
 #endif
         if (rc != SQLITE_OK)
@@ -84,7 +82,6 @@ public:
 #if SQLITE_VERSION_NUMBER >= 3005000
         const int rc = sqlite3_open_v2 (file_.c_str(), &db_, flags, 0);
 #else
-#warning "Mapnik's sqlite plugin is compiling against a version of sqlite older than 3.5.x which may make rendering slow..."
         const int rc = sqlite3_open (file_.c_str(), &db_);
 #endif
         if (rc != SQLITE_OK)
@@ -163,6 +160,12 @@ public:
         return db_;
     }
 
+    bool load_extension(std::string const& ext_path)
+    {
+        sqlite3_enable_load_extension(db_, 1);
+        int result = sqlite3_load_extension(db_, ext_path.c_str(), 0 , 0);
+        return (result == SQLITE_OK)? true : false;
+    }
 
 private:
 

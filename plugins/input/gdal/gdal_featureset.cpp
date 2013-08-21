@@ -23,11 +23,18 @@
 // mapnik
 #include <mapnik/global.hpp>
 #include <mapnik/debug.hpp>
+#include <mapnik/image_data.hpp>
+#include <mapnik/raster.hpp>
 #include <mapnik/ctrans.hpp>
+#include <mapnik/feature.hpp>
 #include <mapnik/feature_factory.hpp>
 
 // boost
 #include <boost/format.hpp>
+#include <boost/make_shared.hpp>
+
+// stl
+#include <cmath>
 
 #include "gdal_featureset.hpp"
 #include <gdal_priv.h>
@@ -35,7 +42,6 @@
 using mapnik::query;
 using mapnik::coord2d;
 using mapnik::box2d;
-using mapnik::Feature;
 using mapnik::feature_ptr;
 using mapnik::CoordTransform;
 using mapnik::geometry_type;
@@ -55,7 +61,6 @@ gdal_featureset::gdal_featureset(GDALDataset& dataset,
                                  int nbands,
                                  double dx,
                                  double dy,
-                                 double filter_factor,
                                  boost::optional<double> const& nodata)
     : dataset_(dataset),
       ctx_(boost::make_shared<mapnik::context_type>()),
@@ -67,7 +72,6 @@ gdal_featureset::gdal_featureset(GDALDataset& dataset,
       dx_(dx),
       dy_(dy),
       nbands_(nbands),
-      filter_factor_(filter_factor),
       nodata_value_(nodata),
       first_(true)
 {
@@ -134,8 +138,8 @@ feature_ptr gdal_featureset::get_feature(mapnik::query const& q)
     box2d<double> box = t.forward(intersect);
 
     //size of resized output pixel in source image domain
-    double margin_x = 1.0 / (fabs(dx_) * boost::get<0>(q.resolution()));
-    double margin_y = 1.0 / (fabs(dy_) * boost::get<1>(q.resolution()));
+    double margin_x = 1.0 / (std::fabs(dx_) * boost::get<0>(q.resolution()));
+    double margin_y = 1.0 / (std::fabs(dy_) * boost::get<1>(q.resolution()));
     if (margin_x < 1)
     {
         margin_x = 1.0;
@@ -197,21 +201,9 @@ feature_ptr gdal_featureset::get_feature(mapnik::query const& q)
         int im_width = int(width_res * intersect.width() + 0.5);
         int im_height = int(height_res * intersect.height() + 0.5);
 
-        // if layer-level filter_factor is set, apply it
-        if (filter_factor_)
-        {
-            im_width *= filter_factor_;
-            im_height *= filter_factor_;
-
-            MAPNIK_LOG_DEBUG(gdal) << "gdal_featureset: Applying layer filter_factor=" << filter_factor_;
-        }
-        // otherwise respect symbolizer level factor applied to query, default of 1.0
-        else
-        {
-            double sym_downsample_factor = q.get_filter_factor();
-            im_width *= sym_downsample_factor;
-            im_height *= sym_downsample_factor;
-        }
+        double sym_downsample_factor = q.get_filter_factor();
+        im_width = int(im_width * sym_downsample_factor + 0.5);
+        im_height = int(im_height * sym_downsample_factor + 0.5);
 
         // case where we need to avoid upsampling so that the
         // image can be later scaled within raster_symbolizer
@@ -223,13 +215,13 @@ feature_ptr gdal_featureset::get_feature(mapnik::query const& q)
 
         if (im_width > 0 && im_height > 0)
         {
-            mapnik::image_data_32 image(im_width, im_height);
+            mapnik::raster_ptr raster = boost::make_shared<mapnik::raster>(intersect, im_width, im_height);
+            feature->set_raster(raster);
+            mapnik::image_data_32 & image = raster->data_;
             image.set(0xffffffff);
 
             MAPNIK_LOG_DEBUG(gdal) << "gdal_featureset: Image Size=(" << im_width << "," << im_height << ")";
             MAPNIK_LOG_DEBUG(gdal) << "gdal_featureset: Reading band=" << band_;
-
-            typedef std::vector<int,int> pallete;
 
             if (band_ > 0) // we are querying a single band
             {
@@ -255,7 +247,6 @@ feature_ptr gdal_featureset::get_feature(mapnik::query const& q)
                                imageData, image.width(), image.height(),
                                GDT_Float32, 0, 0);
 
-                feature->set_raster(boost::make_shared<mapnik::raster>(intersect,image));
                 if (hasNoData)
                 {
                     feature->put("NODATA",nodata);
@@ -307,7 +298,7 @@ feature_ptr gdal_featureset::get_feature(mapnik::query const& q)
                     case GCI_PaletteIndex:
                     {
                         grey = band;
-
+#ifdef MAPNIK_LOG
                         MAPNIK_LOG_DEBUG(gdal) << "gdal_featureset: Found gray band, and colortable...";
 
                         GDALColorTable *color_table = band->GetColorTable();
@@ -326,6 +317,7 @@ feature_ptr gdal_featureset::get_feature(mapnik::query const& q)
                                 MAPNIK_LOG_DEBUG(gdal) << "gdal_featureset: Color entry RGB=" << ce->c1 << "," <<ce->c2 << "," << ce->c3;
                             }
                         }
+#endif
                         break;
                     }
                     case GCI_Undefined:
@@ -446,10 +438,10 @@ feature_ptr gdal_featureset::get_feature(mapnik::query const& q)
                     {
                         MAPNIK_LOG_DEBUG(gdal) << "gdal_featureset: Loading colour table...";
 
-                        unsigned nodata_value = static_cast<unsigned>(nodata);
+                        unsigned nodata_value = static_cast<unsigned>(std::floor(nodata+.5)); // FIXME: is it realy unsigned ?
                         if (hasNoData)
                         {
-                            feature->put("NODATA",static_cast<int>(nodata_value));
+                            feature->put("NODATA",static_cast<mapnik::value_integer>(nodata_value));
                         }
                         for (unsigned y = 0; y < image.height(); ++y)
                         {
@@ -488,8 +480,6 @@ feature_ptr gdal_featureset::get_feature(mapnik::query const& q)
                     alpha->RasterIO(GF_Read, x_off, y_off, width, height, image.getBytes() + 3,
                                     image.width(), image.height(), GDT_Byte, 4, 4 * image.width());
                 }
-
-                feature->set_raster(mapnik::raster_ptr(new mapnik::raster(intersect, image)));
             }
             return feature;
         }

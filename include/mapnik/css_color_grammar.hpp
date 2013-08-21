@@ -25,9 +25,9 @@
 
 // mapnik
 #include <mapnik/color.hpp>
+#include <mapnik/util/hsl.hpp>
 
 // spirit2
-#include <boost/config/warning_disable.hpp>
 #include <boost/spirit/include/qi.hpp>
 #include <boost/spirit/include/qi_action.hpp>
 
@@ -39,6 +39,7 @@
 
 // stl
 #include <string>
+
 
 // boost
 #include <boost/version.hpp>
@@ -105,24 +106,13 @@ struct alpha_conv_impl
     }
 };
 
-// http://www.w3.org/TR/css3-color/#hsl-color
-inline double hue_to_rgb( double m1, double m2, double h)
-{
-    if (h < 0.0) h = h + 1.0;
-    else if (h > 1) h = h - 1.0;
-
-    if (h * 6 < 1.0)
-        return m1 + (m2 - m1) * h * 6.0;
-    if (h * 2 < 1.0)
-        return m2;
-    if (h * 3 < 2.0)
-        return m1 + (m2 - m1)* (2.0/3.0 - h) * 6.0;
-    return m1;
-}
-
 struct hsl_conv_impl
 {
+#ifdef BOOST_SPIRIT_USE_PHOENIX_V3
+    template<typename T>
+#else
     template<typename T0,typename T1, typename T2, typename T3>
+#endif
     struct result
     {
         typedef void type;

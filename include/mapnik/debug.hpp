@@ -26,9 +26,9 @@
 // mapnik (should not depend on anything that need to use this)
 #include <mapnik/config.hpp>
 #include <mapnik/utils.hpp>
+#include <mapnik/noncopyable.hpp>
 
 // boost
-#include <boost/utility.hpp>
 #include <boost/unordered_map.hpp>
 #ifdef MAPNIK_THREADSAFE
 #include <boost/thread/mutex.hpp>
@@ -50,7 +50,7 @@ namespace mapnik {
     */
     class MAPNIK_DECL logger :
         public singleton<logger,CreateStatic>,
-        private boost::noncopyable
+        private mapnik::noncopyable
     {
     public:
         enum severity_type
@@ -164,7 +164,7 @@ namespace mapnik {
         public:
             typedef std::basic_ostringstream<Ch, Tr, A> stream_buffer;
 
-            void operator()(const logger::severity_type& severity, const stream_buffer &s)
+            void operator()(const logger::severity_type& /*severity*/, const stream_buffer &s)
             {
 #ifdef MAPNIK_THREADSAFE
                 static boost::mutex mutex;
@@ -186,22 +186,26 @@ namespace mapnik {
                  class Ch = char,
                  class Tr = std::char_traits<Ch>,
                  class A = std::allocator<Ch> >
-        class base_log : public boost::noncopyable
+        class base_log : public mapnik::noncopyable
         {
         public:
             typedef OutputPolicy<Ch, Tr, A> output_policy;
 
             base_log() {}
 
+#ifdef MAPNIK_LOG
             base_log(const char* object_name)
             {
-#ifdef MAPNIK_LOG
                 if (object_name != NULL)
                 {
                     object_name_ = object_name;
                 }
-#endif
             }
+#else
+            base_log(const char* /*object_name*/)
+            {
+            }
+#endif
 
             ~base_log()
             {
@@ -214,13 +218,20 @@ namespace mapnik {
             }
 
             template<class T>
+#ifdef MAPNIK_LOG
             base_log &operator<<(const T &x)
             {
-#ifdef MAPNIK_LOG
+
                 streambuf_ << x;
-#endif
                 return *this;
             }
+#else
+            base_log &operator<<(const T& /*x*/)
+            {
+
+                return *this;
+            }
+#endif
 
         private:
 #ifdef MAPNIK_LOG
@@ -245,7 +256,7 @@ namespace mapnik {
                  class Ch = char,
                  class Tr = std::char_traits<Ch>,
                  class A = std::allocator<Ch> >
-        class base_log_always : public boost::noncopyable
+        class base_log_always : public mapnik::noncopyable
         {
         public:
             typedef OutputPolicy<Ch, Tr, A> output_policy;

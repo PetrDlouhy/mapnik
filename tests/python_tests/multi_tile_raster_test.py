@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 
 from nose.tools import *
-from utilities import execution_path, save_data, contains_word
-
+from utilities import execution_path, run_all, contains_word
 import os, mapnik
 
 def setup():
@@ -40,8 +39,6 @@ def test_multi_tile_policy():
         im = mapnik.Image(_map.width, _map.height)
         mapnik.render(_map, im)
 
-        save_data('test_multi_tile_policy.png', im.tostring('png'))
-
         # test green chunk
         eq_(im.view(0,64,1,1).tostring(), '\x00\xff\x00\xff')
         eq_(im.view(127,64,1,1).tostring(), '\x00\xff\x00\xff')
@@ -68,4 +65,4 @@ def test_multi_tile_policy():
 
 if __name__ == "__main__":
     setup()
-    [eval(run)() for run in dir() if 'test_' in run]
+    run_all(eval(x) for x in dir() if x.startswith("test_"))

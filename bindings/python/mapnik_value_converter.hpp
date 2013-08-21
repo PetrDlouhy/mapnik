@@ -22,6 +22,9 @@
 #ifndef MAPNIK_PYTHON_BINDING_VALUE_CONVERTER_INCLUDED
 #define MAPNIK_PYTHON_BINDING_VALUE_CONVERTER_INCLUDED
 
+// mapnik
+#include <mapnik/value.hpp>
+
 // boost
 #include <boost/python.hpp>
 #include <boost/implicit_cast.hpp>
@@ -30,13 +33,9 @@ namespace boost { namespace python {
 
     struct value_converter : public boost::static_visitor<PyObject*>
     {
-        PyObject * operator() (int val) const
+        PyObject * operator() (mapnik::value_integer val) const
         {
-#if PY_VERSION_HEX >= 0x03000000
-            return ::PyLong_FromLong(val);
-#else
-            return ::PyInt_FromLong(val);
-#endif
+            return ::PyLong_FromLongLong(val);
         }
 
         PyObject * operator() (double val) const
@@ -54,7 +53,7 @@ namespace boost { namespace python {
             return ::PyUnicode_DecodeUTF8(s.c_str(),implicit_cast<ssize_t>(s.length()),0);
         }
 
-        PyObject * operator() (UnicodeString const& s) const
+        PyObject * operator() (mapnik::value_unicode_string const& s) const
         {
             std::string buffer;
             mapnik::to_utf8(s,buffer);

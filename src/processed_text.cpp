@@ -22,11 +22,13 @@
 
 #include <mapnik/processed_text.hpp>
 #include <mapnik/config_error.hpp>
+#include <mapnik/font_engine_freetype.hpp>
+#include <mapnik/value_types.hpp>
 
 namespace mapnik
 {
 
-void processed_text::push_back(char_properties const& properties, UnicodeString const& text)
+void processed_text::push_back(char_properties const& properties, mapnik::value_unicode_string const& text)
 {
     expr_list_.push_back(processed_expression(properties, text));
 }
@@ -54,7 +56,7 @@ void processed_text::clear()
 }
 
 
-string_info &processed_text::get_string_info()
+string_info const& processed_text::get_string_info()
 {
     info_.clear(); //if this function is called twice invalid results are returned, so clear string_info first
     expression_list::iterator itr = expr_list_.begin();
@@ -65,22 +67,22 @@ string_info &processed_text::get_string_info()
         face_set_ptr faces = font_manager_.get_face_set(p.face_name, p.fontset);
         if (faces->size() == 0)
         {
-            if (!p.fontset.get_name().empty())
+            if (p.fontset && !p.fontset->get_name().empty())
             {
-                if (p.fontset.size())
+                if (p.fontset->size())
                 {
                     if (!p.face_name.empty())
                     {
-                        throw config_error("Unable to find specified font face '" + p.face_name + "' in font set: '" + p.fontset.get_name() + "'");
+                        throw config_error("Unable to find specified font face '" + p.face_name + "' in font set: '" + p.fontset->get_name() + "'");
                     }
                     else
                     {
-                        throw config_error("No valid font face could be loaded for font set: '" + p.fontset.get_name() + "'");
+                        throw config_error("No valid font face could be loaded for font set: '" + p.fontset->get_name() + "'");
                     }
                 }
                 else
                 {
-                    throw config_error("Font set '" + p.fontset.get_name() + "' does not contain any Font face-name entries");           
+                    throw config_error("Font set '" + p.fontset->get_name() + "' does not contain any Font face-name entries");
                 }
             }
             else if (!p.face_name.empty())

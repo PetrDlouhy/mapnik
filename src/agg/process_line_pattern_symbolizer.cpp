@@ -20,23 +20,25 @@
  *
  *****************************************************************************/
 
-// boost
-#include <boost/foreach.hpp>
 // mapnik
+#include <mapnik/feature.hpp>
 #include <mapnik/debug.hpp>
 #include <mapnik/graphics.hpp>
 #include <mapnik/agg_renderer.hpp>
 #include <mapnik/agg_rasterizer.hpp>
 #include <mapnik/agg_pattern_source.hpp>
-#include <mapnik/expression_evaluator.hpp>
 #include <mapnik/marker.hpp>
 #include <mapnik/marker_cache.hpp>
 #include <mapnik/line_pattern_symbolizer.hpp>
 #include <mapnik/vertex_converters.hpp>
+#include <mapnik/noncopyable.hpp>
+#include <mapnik/parse_path.hpp>
+
 // agg
 #include "agg_basics.h"
-#include "agg_rendering_buffer.h"
 #include "agg_pixfmt_rgba.h"
+#include "agg_color_rgba.h"
+#include "agg_rendering_buffer.h"
 #include "agg_rasterizer_outline.h"
 #include "agg_rasterizer_outline_aa.h"
 #include "agg_scanline_u.h"
@@ -47,6 +49,39 @@
 #include "agg_renderer_outline_image.h"
 #include "agg_conv_clip_polyline.h"
 
+// boost
+#include <boost/foreach.hpp>
+
+namespace {
+
+class pattern_source : private mapnik::noncopyable
+{
+public:
+    pattern_source(mapnik::image_data_32 const& pattern)
+        : pattern_(pattern) {}
+
+    unsigned int width() const
+    {
+        return pattern_.width();
+    }
+    unsigned int height() const
+    {
+        return pattern_.height();
+    }
+    agg::rgba8 pixel(int x, int y) const
+    {
+        unsigned c = pattern_(x,y);
+        return agg::rgba8(c & 0xff,
+                          (c >> 8) & 0xff,
+                          (c >> 16) & 0xff,
+                          (c >> 24) & 0xff);
+    }
+private:
+    mapnik::image_data_32 const& pattern_;
+};
+
+}
+
 namespace mapnik {
 
 template <typename T>
@@ -56,7 +91,6 @@ void  agg_renderer<T>::process(line_pattern_symbolizer const& sym,
 {
     typedef agg::rgba8 color;
     typedef agg::order_rgba order;
-    typedef agg::pixel32_type pixel_type;
     typedef agg::comp_op_adaptor_rgba_pre<color, order> blender_type;
     typedef agg::pattern_filter_bilinear_rgba8 pattern_filter_type;
     typedef agg::line_image_pattern<pattern_filter_type> pattern_type;
@@ -81,7 +115,7 @@ void  agg_renderer<T>::process(line_pattern_symbolizer const& sym,
 
     if (!pat) return;
 
-    agg::rendering_buffer buf(current_buffer_->raw_data(),width_,height_, width_ * 4);
+    agg::rendering_buffer buf(current_buffer_->raw_data(),current_buffer_->width(),current_buffer_->height(), current_buffer_->width() * 4);
     pixfmt_type pixf(buf);
     pixf.comp_op(static_cast<agg::comp_op_e>(sym.comp_op()));
     renderer_base ren_base(pixf);
@@ -99,18 +133,14 @@ void  agg_renderer<T>::process(line_pattern_symbolizer const& sym,
     if (sym.clip())
     {
         double padding = (double)(query_extent_.width()/pixmap_.width());
-        float half_stroke = (*mark)->width()/2.0;
+        double half_stroke = (*mark)->width()/2.0;
         if (half_stroke > 1)
             padding *= half_stroke;
         if (fabs(sym.offset()) > 0)
             padding *= fabs(sym.offset()) * 1.2;
-        double x0 = query_extent_.minx();
-        double y0 = query_extent_.miny();
-        double x1 = query_extent_.maxx();
-        double y1 = query_extent_.maxy();
-        clipping_extent.init(x0 - padding, y0 - padding, x1 + padding , y1 + padding);
+        padding *= scale_factor_;
+        clipping_extent.pad(padding);
     }
-
     typedef boost::mpl::vector<clip_line_tag,transform_tag,offset_transform_tag,smooth_tag> conv_types;
     vertex_converter<box2d<double>, rasterizer_type, line_pattern_symbolizer,
                      CoordTransform, proj_transform, agg::trans_affine, conv_types>
@@ -119,6 +149,7 @@ void  agg_renderer<T>::process(line_pattern_symbolizer const& sym,
     if (sym.clip()) converter.set<clip_line_tag>(); //optional clip (default: true)
     converter.set<transform_tag>(); //always transform
     if (fabs(sym.offset()) > 0.0) converter.set<offset_transform_tag>(); // parallel offset
+    if (sym.simplify_tolerance() > 0.0) converter.set<simplify_tag>(); // optional simplify converter
     if (sym.smooth() > 0.0) converter.set<smooth_tag>(); // optional smooth converter
 
     BOOST_FOREACH(geometry_type & geom, feature.paths())

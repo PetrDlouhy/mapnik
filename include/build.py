@@ -6,8 +6,11 @@ Import('env')
 base = './mapnik/'
 subdirs = ['','svg','wkt','grid','json','util','text_placements','formatting']
 
-#if env['SVG_RENDERER']:
-#    subdirs.append('svg/output')
+if env['SVG_RENDERER']:
+    subdirs.append('svg/output')
+
+if env['GRID_RENDERER']:
+    subdirs.append('grid')
 
 if 'install' in COMMAND_LINE_TARGETS:
     for subdir in subdirs:

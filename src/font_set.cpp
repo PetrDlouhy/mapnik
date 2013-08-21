@@ -25,12 +25,9 @@
 
 //stl
 #include <string>
-#include <iostream>
 
 namespace mapnik
 {
-font_set::font_set()
-    : name_("") {}
 
 font_set::font_set(std::string const& name)
     : name_(name) {}

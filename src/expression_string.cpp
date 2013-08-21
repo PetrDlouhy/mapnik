@@ -21,14 +21,20 @@
  *****************************************************************************/
 
 // mapnik
-#include <mapnik/expression_string.hpp>
+
+#include <mapnik/config.hpp> // needed by msvc
+#include <mapnik/expression_string.hpp> // needed by msvc
+#include <mapnik/expression_node_types.hpp>
+#include <mapnik/expression_node.hpp>
+#include <mapnik/attribute.hpp>
+#include <mapnik/value_types.hpp>
+#include <mapnik/value.hpp>
 
 // boost
 #include <boost/variant.hpp>
-
-// icu
-#include <unicode/uversion.h>
-
+#if defined(BOOST_REGEX_HAS_ICU)
+#include <boost/regex/icu.hpp>          // for u32regex
+#endif
 
 namespace mapnik
 {
@@ -50,7 +56,7 @@ struct expression_string : boost::static_visitor<void>
         str_ += "]";
     }
 
-    void operator() (geometry_type_attribute const& attr) const
+    void operator() (geometry_type_attribute const& /*attr*/) const
     {
         str_ += "[mapnik::geometry_type]";
     }
@@ -87,7 +93,7 @@ struct expression_string : boost::static_visitor<void>
         str_ +=".match('";
 #if defined(BOOST_REGEX_HAS_ICU)
         std::string utf8;
-        UnicodeString ustr = UnicodeString::fromUTF32( &x.pattern.str()[0] ,x.pattern.str().length());
+        mapnik::value_unicode_string ustr = mapnik::value_unicode_string::fromUTF32( &x.pattern.str()[0] ,x.pattern.str().length());
         to_utf8(ustr,utf8);
         str_ += utf8;
 #else
@@ -103,7 +109,7 @@ struct expression_string : boost::static_visitor<void>
         str_ += "'";
 #if defined(BOOST_REGEX_HAS_ICU)
         std::string utf8;
-        UnicodeString ustr = UnicodeString::fromUTF32( &x.pattern.str()[0] ,x.pattern.str().length());
+        mapnik::value_unicode_string ustr = mapnik::value_unicode_string::fromUTF32( &x.pattern.str()[0] ,x.pattern.str().length());
         to_utf8(ustr,utf8);
         str_ += utf8;
         str_ +="','";
@@ -112,7 +118,7 @@ struct expression_string : boost::static_visitor<void>
 #else
         str_ += x.pattern.str();
         str_ +="','";
-        str_ += x.pattern.str();
+        str_ += x.format;
 #endif
         str_ +="')";
     }

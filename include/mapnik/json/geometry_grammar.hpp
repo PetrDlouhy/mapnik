@@ -24,26 +24,68 @@
 #define MAPNIK_GEOMETRY_GRAMMAR_HPP
 
 // mapnik
-#include <mapnik/geometry.hpp>
+#include <mapnik/geometry.hpp>  // for geometry_type
+#include <mapnik/vertex.hpp>  // for CommandType
 
 // spirit::qi
-#include <boost/config/warning_disable.hpp>
 #include <boost/spirit/include/qi.hpp>
-#include <boost/spirit/include/phoenix.hpp>
-#include <boost/variant/apply_visitor.hpp>
-#include <boost/variant/variant.hpp>
-
-// stl
-#include <iostream>
+#include <boost/spirit/include/phoenix_function.hpp>
 
 namespace mapnik { namespace json {
 
 namespace qi = boost::spirit::qi;
-namespace phoenix = boost::phoenix;
-namespace fusion = boost::fusion;
 namespace standard_wide =  boost::spirit::standard_wide;
 using standard_wide::space_type;
 
+#ifdef BOOST_SPIRIT_USE_PHOENIX_V3
+struct push_vertex
+{
+    typedef void result_type;
+
+    template <typename T0,typename T1, typename T2, typename T3>
+    result_type operator() (T0 c, T1 path, T2 x, T3 y) const
+    {
+        BOOST_ASSERT( path!=0 );
+        path->push_vertex(x,y,c);
+    }
+};
+
+struct close_path
+{
+    typedef void result_type;
+
+    template <typename T>
+    result_type operator() (T path) const
+    {
+        BOOST_ASSERT( path!=0 );
+        path->close_path();
+    }
+};
+
+struct cleanup
+{
+    typedef void result_type;
+    template <typename T0>
+    void operator() (T0 & path) const
+    {
+        if (path) delete path, path=0;
+    }
+};
+
+struct where_message
+{
+    typedef std::string result_type;
+
+    template <typename Iterator>
+    std::string operator() (Iterator first, Iterator last, std::size_t size) const
+    {
+        std::string str(first, last);
+        if (str.length() > size)
+            return str.substr(0, size) + "..." ;
+        return str;
+    }
+};
+#else
 struct push_vertex
 {
     template <typename T0,typename T1, typename T2, typename T3>
@@ -72,7 +114,7 @@ struct close_path
     void operator() (T path) const
     {
         BOOST_ASSERT( path!=0 );
-        path->close();
+        path->close_path();
     }
 };
 
@@ -91,10 +133,30 @@ struct cleanup
     }
 };
 
+struct where_message
+{
+    template <typename T0,typename T1,typename T2>
+    struct result
+    {
+        typedef std::string type;
+    };
+
+    template <typename Iterator>
+    std::string operator() (Iterator first, Iterator last, std::size_t size) const
+    {
+        std::string str(first, last);
+        if (str.length() > size)
+            return str.substr(0, size) + "..." ;
+        return str;
+    }
+};
+#endif
+
+
 template <typename Iterator>
 struct geometry_grammar :
         qi::grammar<Iterator,qi::locals<int>, void(boost::ptr_vector<mapnik::geometry_type>& )
-                   , space_type>
+        , space_type>
 {
     geometry_grammar();
     qi::rule<Iterator, qi::locals<int>, void(boost::ptr_vector<mapnik::geometry_type>& ),space_type> geometry;
@@ -125,6 +187,7 @@ struct geometry_grammar :
     boost::phoenix::function<push_vertex> push_vertex_;
     boost::phoenix::function<close_path> close_path_;
     boost::phoenix::function<cleanup> cleanup_;
+    boost::phoenix::function<where_message> where_message_;
 };
 
 }}

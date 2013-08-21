@@ -24,28 +24,17 @@
 #define MAPNIK_EXPRESSIONS_GRAMMAR_HPP
 
 // mapnik
-#include <mapnik/value.hpp>
+#include <mapnik/config.hpp>
+#include <mapnik/value_types.hpp>
+#include <mapnik/unicode.hpp>
 #include <mapnik/expression_node.hpp>
-
-// boost
-#include <boost/version.hpp>
-#include <boost/shared_ptr.hpp>
-#include <boost/concept_check.hpp>
 
 // spirit2
 #include <boost/spirit/include/qi.hpp>
-#include <boost/spirit/include/qi_action.hpp>
-
-// fusion
-#include <boost/fusion/include/adapt_struct.hpp>
+#include <boost/spirit/include/support_locals.hpp>
 
 // phoenix
-#include <boost/spirit/include/phoenix_core.hpp>
-#include <boost/spirit/include/phoenix_object.hpp>
-#include <boost/spirit/include/phoenix_operator.hpp>
 #include <boost/spirit/include/phoenix_function.hpp>
-#include <boost/spirit/include/phoenix_stl.hpp>
-#include <boost/spirit/home/phoenix/object/construct.hpp>
 
 namespace mapnik
 {
@@ -60,13 +49,13 @@ struct unicode_impl
     template <typename T>
     struct result
     {
-        typedef UnicodeString type;
+        typedef mapnik::value_unicode_string type;
     };
 
     explicit unicode_impl(mapnik::transcoder const& tr)
         : tr_(tr) {}
 
-    UnicodeString operator()(std::string const& str) const
+    mapnik::value_unicode_string operator()(std::string const& str) const
     {
         return tr_.transcode(str.c_str());
     }
@@ -76,7 +65,11 @@ struct unicode_impl
 
 struct regex_match_impl
 {
+#ifdef BOOST_SPIRIT_USE_PHOENIX_V3
+    template <typename T>
+#else
     template <typename T0, typename T1>
+#endif
     struct result
     {
         typedef expr_node type;
@@ -93,7 +86,12 @@ struct regex_match_impl
 
 struct regex_replace_impl
 {
+
+#ifdef BOOST_SPIRIT_USE_PHOENIX_V3
+    template <typename T>
+#else
     template <typename T0, typename T1, typename T2>
+#endif
     struct result
     {
         typedef expr_node type;
@@ -108,7 +106,7 @@ struct regex_replace_impl
     mapnik::transcoder const& tr_;
 };
 
-struct geometry_types : qi::symbols<char,int>
+struct geometry_types : qi::symbols<char,mapnik::value_integer>
 {
     geometry_types()
     {
@@ -121,6 +119,12 @@ struct geometry_types : qi::symbols<char,int>
     }
 };
 
+template <typename T>
+struct integer_parser
+{
+    typedef qi::int_parser<T,10,1,-1> type;
+};
+
 template <typename Iterator>
 struct expression_grammar : qi::grammar<Iterator, expr_node(), space_type>
 {
@@ -129,6 +133,7 @@ struct expression_grammar : qi::grammar<Iterator, expr_node(), space_type>
     explicit expression_grammar(mapnik::transcoder const& tr);
 
     qi::real_parser<double, qi::strict_real_policies<double> > strict_double;
+    typename integer_parser<mapnik::value_integer>::type int__;
     boost::phoenix::function<unicode_impl> unicode_;
     boost::phoenix::function<regex_match_impl> regex_match_;
     boost::phoenix::function<regex_replace_impl> regex_replace_;

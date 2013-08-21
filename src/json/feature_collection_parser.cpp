@@ -20,6 +20,14 @@
  *
  *****************************************************************************/
 
+// TODO https://github.com/mapnik/mapnik/issues/1658
+#include <boost/version.hpp>
+#if BOOST_VERSION >= 105200
+#ifndef BOOST_SPIRIT_USE_PHOENIX_V3
+#define BOOST_SPIRIT_USE_PHOENIX_V3
+#endif
+#endif
+
 // mapnik
 #include <mapnik/json/feature_collection_parser.hpp>
 #include <mapnik/json/feature_collection_grammar.hpp>
@@ -28,6 +36,9 @@
 #include <boost/version.hpp>
 #include <boost/spirit/include/qi.hpp>
 #include <boost/spirit/include/support_multi_pass.hpp>
+
+// stl
+#include <stdexcept>
 
 namespace mapnik { namespace json {
 
@@ -59,4 +70,3 @@ namespace mapnik { namespace json {
     template class feature_collection_parser<boost::spirit::multi_pass<std::istreambuf_iterator<char> > >;
 
 }}
-

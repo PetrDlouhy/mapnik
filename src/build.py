@@ -17,7 +17,7 @@
 # License along with this library; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #
-# 
+#
 
 
 import os
@@ -48,6 +48,7 @@ mapnik_lib_link_flag = ''
 # note: .data gets the actual list to allow a true copy
 # and avoids unintended pollution of other environments
 libmapnik_cxxflags = copy(lib_env['CXXFLAGS'].data)
+libmapnik_defines = copy(lib_env['CPPDEFINES'])
 
 ABI_VERSION = env['ABI_VERSION']
 
@@ -56,26 +57,46 @@ regex = 'boost_regex%s' % env['BOOST_APPEND']
 system = 'boost_system%s' % env['BOOST_APPEND']
 
 # clear out and re-set libs for this env
-lib_env['LIBS'] = ['freetype','ltdl','png','tiff','z','proj',env['ICU_LIB_NAME'],filesystem,system,regex]
+lib_env['LIBS'] = ['freetype',env['ICU_LIB_NAME'],filesystem,system,regex]
 
-if env['JPEG']:
+if '-DMAPNIK_USE_PROJ4' in env['CPPDEFINES']:
+   lib_env['LIBS'].append('proj')
+
+enabled_imaging_libraries = []
+
+if '-DHAVE_PNG' in env['CPPDEFINES']:
+   lib_env['LIBS'].append('png')
+   enabled_imaging_libraries.append('png_reader.cpp')
+
+if '-DHAVE_TIFF' in env['CPPDEFINES']:
+   lib_env['LIBS'].append('tiff')
+   enabled_imaging_libraries.append('tiff_reader.cpp')
+
+if '-DHAVE_WEBP' in env['CPPDEFINES']:
+   lib_env['LIBS'].append('webp')
+   enabled_imaging_libraries.append('webp_reader.cpp')
+
+if '-DHAVE_JPEG' in env['CPPDEFINES']:
    lib_env['LIBS'].append('jpeg')
+   enabled_imaging_libraries.append('jpeg_reader.cpp')
 
 if len(env['EXTRA_FREETYPE_LIBS']):
     lib_env['LIBS'].extend(copy(env['EXTRA_FREETYPE_LIBS']))
 
-# libxml2 should be optional but is currently not
-# https://github.com/mapnik/mapnik/issues/913
 lib_env['LIBS'].append('xml2')
+lib_env['LIBS'].append('z')
 
 if env['THREADING'] == 'multi':
     lib_env['LIBS'].append('boost_thread%s' % env['BOOST_APPEND'])
 
+if '-DBOOST_REGEX_HAS_ICU' in env['CPPDEFINES']:
+    lib_env['LIBS'].append('icui18n')
 
 if env['RUNTIME_LINK'] == 'static':
     if 'icuuc' in env['ICU_LIB_NAME']:
         lib_env['LIBS'].append('icudata')
-        lib_env['LIBS'].append('icui18n')
+    if env['PLATFORM'] == 'Linux':
+        lib_env['LIBS'].append('dl')
 else:
     lib_env['LIBS'].insert(0, 'agg')
 
@@ -100,6 +121,13 @@ else: # unix, non-macos
 
 source = Split(
     """
+    fs.cpp
+    debug_symbolizer.cpp
+    request.cpp
+    well_known_srs.cpp
+    params.cpp
+    image_filter_types.cpp
+    miniz_png.cpp
     color.cpp
     css_color_grammar.cpp
     conversions.cpp
@@ -109,6 +137,7 @@ source = Split(
     box2d.cpp
     building_symbolizer.cpp
     datasource_cache.cpp
+    datasource_cache_static.cpp
     debug.cpp
     deepcopy.cpp
     expression_node.cpp
@@ -118,6 +147,7 @@ source = Split(
     transform_expression_grammar.cpp
     transform_expression.cpp
     feature_kv_iterator.cpp
+    feature_style_processor.cpp
     feature_type_style.cpp
     font_engine_freetype.cpp
     font_set.cpp
@@ -138,19 +168,19 @@ source = Split(
     path_expression_grammar.cpp
     placement_finder.cpp
     plugin.cpp
-    png_reader.cpp
     point_symbolizer.cpp
     polygon_pattern_symbolizer.cpp
     polygon_symbolizer.cpp
+    rule.cpp
     save_map.cpp
     shield_symbolizer.cpp
     text_symbolizer.cpp
-    tiff_reader.cpp
     wkb.cpp
     projection.cpp
     proj_transform.cpp
     distance.cpp
     scale_denominator.cpp
+    simplify.cpp
     memory_datasource.cpp
     stroke.cpp
     symbolizer.cpp
@@ -158,6 +188,7 @@ source = Split(
     unicode.cpp
     markers_symbolizer.cpp
     raster_colorizer.cpp
+    raster_symbolizer.cpp
     wkt/wkt_factory.cpp
     wkt/wkt_generator.cpp
     mapped_memory_cache.cpp
@@ -170,6 +201,7 @@ source = Split(
     json/geometry_grammar.cpp
     json/geometry_parser.cpp
     json/feature_grammar.cpp
+    json/feature_parser.cpp
     json/feature_collection_parser.cpp
     json/geojson_generator.cpp
     processed_text.cpp
@@ -191,58 +223,49 @@ source = Split(
     """
     )
 
-if env['HAS_CAIRO']:
-    lib_env.PrependUnique(LIBPATH=env['CAIROMM_LIBPATHS'])
-    lib_env.Append(LIBS=env['CAIROMM_LINKFLAGS'])
-    lib_env.Append(CXXFLAGS = '-DHAVE_CAIRO')
-    libmapnik_cxxflags.append('-DHAVE_CAIRO')
-    lib_env.PrependUnique(CPPPATH=copy(env['CAIROMM_CPPPATHS']))
-    source.insert(0,'cairo_renderer.cpp')
-    #cairo_env.PrependUnique(CPPPATH=env['CAIROMM_CPPPATHS'])
-    # not safe, to much depends on graphics.hpp
-    #cairo_env = lib_env.Clone()
-    #cairo_env.Append(CXXFLAGS = '-DHAVE_CAIRO')
-    #fixup = ['feature_type_style.cpp','load_map.cpp','cairo_renderer.cpp','graphics.cpp','image_util.cpp']
-    #for cpp in fixup:
-    #    if cpp in source:
-    #        source.remove(cpp)
-    #    if env['LINKING'] == 'static':
-    #        source.insert(0,cairo_env.StaticObject(cpp))
-    #    else:
-    #        source.insert(0,cairo_env.SharedObject(cpp))
-
-
-processor_cpp = 'feature_style_processor.cpp'
-
-if env['RENDERING_STATS']:
-    env3 = lib_env.Clone()
-    env3.Append(CXXFLAGS='-DRENDERING_STATS')
-    if env['LINKING'] == 'static':
-        source.insert(0,env3.StaticObject(processor_cpp))
-    else:
-        source.insert(0,env3.SharedObject(processor_cpp))
-else:
-    source.insert(0,processor_cpp);
-
-if env.get('BOOST_LIB_VERSION_FROM_HEADER'):
-    boost_version_from_header = int(env['BOOST_LIB_VERSION_FROM_HEADER'].split('_')[1])
-    if boost_version_from_header < 46:
-        # avoid ubuntu issue with boost interprocess:
-        # https://github.com/mapnik/mapnik/issues/1001
-        env4 = lib_env.Clone()
-        env4.Append(CXXFLAGS = '-fpermissive')
-        cpp ='mapped_memory_cache.cpp'
-        source.remove(cpp)
-        if env['LINKING'] == 'static':
-            source.insert(0,env4.StaticObject(cpp))
+if env['PLUGIN_LINKING'] == 'static':
+    hit = False
+    for plugin in env['REQUESTED_PLUGINS']:
+        details = env['PLUGINS'][plugin]
+        if details['lib'] in env['LIBS'] or not details['lib']:
+            plugin_env = SConscript('../plugins/input/%s/build.py' % plugin)
+            if not plugin_env:
+                print("Notice: no 'plugin_env' variable found for plugin: '%s'" % plugin)
+            else:
+                hit = True
+                DEF = '-DMAPNIK_STATIC_PLUGIN_%s' % plugin.upper()
+                lib_env.Append(CPPDEFINES = DEF)
+                if DEF not in libmapnik_defines:
+                    libmapnik_defines.append(DEF)
+                if plugin_env.has_key('SOURCES') and plugin_env['SOURCES']:
+                    source += ['../plugins/input/%s/%s' % (plugin, src) for src in plugin_env['SOURCES']]
+                if plugin_env.has_key('CPPDEFINES') and plugin_env['CPPDEFINES']:
+                    lib_env.AppendUnique(CPPDEFINES=plugin_env['CPPDEFINES'])
+                if plugin_env.has_key('CXXFLAGS') and plugin_env['CXXFLAGS']:
+                    lib_env.AppendUnique(CXXFLAGS=plugin_env['CXXFLAGS'])
+                if plugin_env.has_key('LINKFLAGS') and plugin_env['LINKFLAGS']:
+                    lib_env.AppendUnique(LINKFLAGS=plugin_env['LINKFLAGS'])
+                if plugin_env.has_key('CPPPATH') and plugin_env['CPPPATH']:
+                    lib_env.AppendUnique(CPPPATH=copy(plugin_env['CPPPATH']))
+                if plugin_env.has_key('LIBS') and plugin_env['LIBS']:
+                    lib_env.AppendUnique(LIBS=plugin_env['LIBS'])
         else:
-            source.insert(0,env4.SharedObject(cpp))
+            print("Notice: dependencies not met for plugin '%s', not building..." % plugin)
+    if hit:
+        lib_env.Append(CPPDEFINES = '-DMAPNIK_STATIC_PLUGINS')
+        libmapnik_defines.append('-DMAPNIK_STATIC_PLUGINS')
 
-if env['JPEG']:
-    source += Split(
-        """
-        jpeg_reader.cpp
-        """)
+if env['HAS_CAIRO']:
+    lib_env.AppendUnique(LIBPATH=env['CAIRO_LIBPATHS'])
+    lib_env.Append(LIBS=env['CAIRO_ALL_LIBS'])
+    lib_env.Append(CPPDEFINES = '-DHAVE_CAIRO')
+    libmapnik_defines.append('-DHAVE_CAIRO')
+    lib_env.AppendUnique(CPPPATH=copy(env['CAIRO_CPPPATHS']))
+    source.insert(0,'cairo_renderer.cpp')
+    source.insert(0,'cairo_context.cpp')
+
+for cpp in enabled_imaging_libraries:
+    source.append(cpp)
 
 # agg backend
 source += Split(
@@ -258,50 +281,78 @@ source += Split(
     agg/process_raster_symbolizer.cpp
     agg/process_shield_symbolizer.cpp
     agg/process_markers_symbolizer.cpp
+    agg/process_debug_symbolizer.cpp
     """
     )
+
+# clipper
+source += Split(
+    """
+     ../deps/clipper/src/clipper.cpp
+    """)
 
 if env['RUNTIME_LINK'] == "static":
     source += glob.glob('../deps/agg/src/' + '*.cpp')
 
 # grid backend
-source += Split(
-    """
-    grid/grid.cpp
-    grid/grid_renderer.cpp
-    grid/process_building_symbolizer.cpp
-    grid/process_line_pattern_symbolizer.cpp
-    grid/process_line_symbolizer.cpp
-    grid/process_markers_symbolizer.cpp
-    grid/process_point_symbolizer.cpp
-    grid/process_polygon_pattern_symbolizer.cpp
-    grid/process_polygon_symbolizer.cpp
-    grid/process_raster_symbolizer.cpp
-    grid/process_shield_symbolizer.cpp
-    grid/process_text_symbolizer.cpp
-    """)
+if env['GRID_RENDERER']:
+    source += Split(
+        """
+        grid/grid.cpp
+        grid/grid_renderer.cpp
+        grid/process_building_symbolizer.cpp
+        grid/process_line_pattern_symbolizer.cpp
+        grid/process_line_symbolizer.cpp
+        grid/process_markers_symbolizer.cpp
+        grid/process_point_symbolizer.cpp
+        grid/process_polygon_pattern_symbolizer.cpp
+        grid/process_polygon_symbolizer.cpp
+        grid/process_raster_symbolizer.cpp
+        grid/process_shield_symbolizer.cpp
+        grid/process_text_symbolizer.cpp
+        """)
+    lib_env.Append(CPPDEFINES = '-DGRID_RENDERER')
+    libmapnik_defines.append('-DGRID_RENDERER')
 
 # https://github.com/mapnik/mapnik/issues/1438
-#if env['SVG_RENDERER']: # svg backend
-#    source += Split(
-#              """
-#        svg/output/svg_renderer.cpp
-#        svg/output/svg_generator.cpp
-#        svg/output/svg_output_attributes.cpp
-#        svg/output/process_symbolizers.cpp
-#        svg/output/process_building_symbolizer.cpp
-#        svg/output/process_line_pattern_symbolizer.cpp
-#        svg/output/process_line_symbolizer.cpp
-#        svg/output/process_markers_symbolizer.cpp
-#        svg/output/process_point_symbolizer.cpp
-#        svg/output/process_polygon_pattern_symbolizer.cpp
-#        svg/output/process_polygon_symbolizer.cpp
-#        svg/output/process_raster_symbolizer.cpp
-#        svg/output/process_shield_symbolizer.cpp
-#        svg/output/process_text_symbolizer.cpp
-#        """)
-#    lib_env.Append(CXXFLAGS = '-DSVG_RENDERER')
-#    libmapnik_cxxflags.append('-DSVG_RENDERER')
+if env['SVG_RENDERER']: # svg backend
+    source += Split(
+    """
+    svg/output/svg_renderer.cpp
+    svg/output/svg_generator.cpp
+    svg/output/svg_output_attributes.cpp
+    svg/output/process_symbolizers.cpp
+    svg/output/process_building_symbolizer.cpp
+    svg/output/process_line_pattern_symbolizer.cpp
+    svg/output/process_line_symbolizer.cpp
+    svg/output/process_markers_symbolizer.cpp
+    svg/output/process_point_symbolizer.cpp
+    svg/output/process_polygon_pattern_symbolizer.cpp
+    svg/output/process_polygon_symbolizer.cpp
+    svg/output/process_raster_symbolizer.cpp
+    svg/output/process_shield_symbolizer.cpp
+    svg/output/process_text_symbolizer.cpp
+    """)
+    lib_env.Append(CPPDEFINES = '-DSVG_RENDERER')
+    libmapnik_defines.append('-DSVG_RENDERER')
+
+if env['SHAPE_MEMORY_MAPPED_FILE']:
+    lib_env.Append(CPPDEFINES = '-DSHAPE_MEMORY_MAPPED_FILE')
+    libmapnik_defines.append('-DSHAPE_MEMORY_MAPPED_FILE')
+
+if env.get('BOOST_LIB_VERSION_FROM_HEADER'):
+    boost_version_from_header = int(env['BOOST_LIB_VERSION_FROM_HEADER'].split('_')[1])
+    if boost_version_from_header < 46:
+        # avoid ubuntu issue with boost interprocess:
+        # https://github.com/mapnik/mapnik/issues/1001
+        env4 = lib_env.Clone()
+        env4.Append(CXXFLAGS = '-fpermissive')
+        cpp ='mapped_memory_cache.cpp'
+        source.remove(cpp)
+        if env['LINKING'] == 'static':
+            source.insert(0,env4.StaticObject(cpp))
+        else:
+            source.insert(0,env4.SharedObject(cpp))
 
 if env['XMLPARSER'] == 'libxml2' and env['HAS_LIBXML2']:
     source += Split(
@@ -309,8 +360,8 @@ if env['XMLPARSER'] == 'libxml2' and env['HAS_LIBXML2']:
         libxml2_loader.cpp
         """)
     env2 = lib_env.Clone()
-    env2.Append(CXXFLAGS = '-DHAVE_LIBXML2')
-    libmapnik_cxxflags.append('-DHAVE_LIBXML2')
+    env2.Append(CPPDEFINES = '-DHAVE_LIBXML2')
+    libmapnik_defines.append('-DHAVE_LIBXML2')
     fixup = ['libxml2_loader.cpp']
     for cpp in fixup:
         if cpp in source:
@@ -326,22 +377,29 @@ else:
         """
     )
 
+# clone the env one more time to isolate mapnik_lib_link_flag
+lib_env_final = lib_env.Clone()
+
 if env['CUSTOM_LDFLAGS']:
-    linkflags = '%s %s' % (env['CUSTOM_LDFLAGS'], mapnik_lib_link_flag)
+    lib_env_final.Prepend(LINKFLAGS='%s %s' % (env['CUSTOM_LDFLAGS'], mapnik_lib_link_flag))
 else:
-    linkflags = mapnik_lib_link_flag
+    lib_env_final.Prepend(LINKFLAGS=mapnik_lib_link_flag)
 
 # cache library values for other builds to use
 env['LIBMAPNIK_LIBS'] = copy(lib_env['LIBS'])
+env['LIBMAPNIK_LINKFLAGS'] = copy(lib_env['LINKFLAGS'])
 env['LIBMAPNIK_CXXFLAGS'] = libmapnik_cxxflags
+env['LIBMAPNIK_DEFINES'] = libmapnik_defines
+
+mapnik = None
 
 if env['PLATFORM'] == 'Darwin':
     target_path = env['MAPNIK_LIB_BASE_DEST']
     if 'uninstall' not in COMMAND_LINE_TARGETS:
         if env['LINKING'] == 'static':
-            mapnik = lib_env.StaticLibrary('mapnik', source, LINKFLAGS=linkflags)
+            mapnik = lib_env_final.StaticLibrary('mapnik', source)
         else:
-            mapnik = lib_env.SharedLibrary('mapnik', source, LINKFLAGS=linkflags)
+            mapnik = lib_env_final.SharedLibrary('mapnik', source)
         result = env.Install(target_path, mapnik)
         env.Alias(target='install', source=result)
 
@@ -363,14 +421,13 @@ else:
 
     if 'uninstall' not in COMMAND_LINE_TARGETS:
         if env['LINKING'] == 'static':
-            mapnik = lib_env.StaticLibrary('mapnik', source, LINKFLAGS=linkflags)
+            mapnik = lib_env_final.StaticLibrary('mapnik', source)
         else:
-            mapnik = lib_env.SharedLibrary('mapnik', source, LINKFLAGS=linkflags)
+            mapnik = lib_env_final.SharedLibrary('mapnik', source)
         result = env.InstallAs(target=target, source=mapnik)
         env.Alias(target='install', source=result)
         if result:
               env.AddPostAction(result, ldconfig)
-
 
     # Install symlinks
     target1 = os.path.join(env['MAPNIK_LIB_BASE_DEST'], "%s.%d.%d" % \
@@ -385,3 +442,14 @@ else:
     env['create_uninstall_target'](env, target2)
     env['create_uninstall_target'](env, target1)
     env['create_uninstall_target'](env, target)
+
+    # to enable local testing
+    lib_major_minor = "%s.%d.%d" % (os.path.basename(env.subst(env['MAPNIK_LIB_NAME'])), int(major), int(minor))
+    local_lib = os.path.basename(env.subst(env['MAPNIK_LIB_NAME']))
+    if os.path.islink(lib_major_minor) or os.path.exists(lib_major_minor):
+        os.remove(lib_major_minor)
+    os.symlink(local_lib,lib_major_minor)
+    Clean(mapnik,lib_major_minor);
+
+if not env['RUNTIME_LINK'] == 'static':
+    Depends(mapnik, env.subst('../deps/agg/libagg.a'))

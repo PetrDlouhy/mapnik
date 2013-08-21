@@ -24,15 +24,34 @@
 #define MAPNIK_ATTRIBUTE_COLLECTOR_HPP
 
 // mapnik
-#include <mapnik/rule.hpp>
 #include <mapnik/transform_processor.hpp>
+#include <mapnik/noncopyable.hpp>
+#include <mapnik/attribute.hpp>
+#include <mapnik/symbolizer.hpp>  // for transform_list_ptr
+#include <mapnik/building_symbolizer.hpp>
+#include <mapnik/line_symbolizer.hpp>
+#include <mapnik/line_pattern_symbolizer.hpp>
+#include <mapnik/polygon_symbolizer.hpp>
+#include <mapnik/polygon_pattern_symbolizer.hpp>
+#include <mapnik/point_symbolizer.hpp>
+#include <mapnik/raster_symbolizer.hpp>
+#include <mapnik/shield_symbolizer.hpp>
+#include <mapnik/text_symbolizer.hpp>
+#include <mapnik/markers_symbolizer.hpp>
+#include <mapnik/rule.hpp> // for rule::symbolizers
+#include <mapnik/expression.hpp>  // for expression_ptr, etc
+#include <mapnik/expression_node_types.hpp>
+#include <mapnik/expression_node.hpp>
+#include <mapnik/parse_path.hpp>  // for path_processor_type
+#include <mapnik/path_expression.hpp>  // for path_expression_ptr
+#include <mapnik/text_placements/base.hpp>  // for text_placements
+
 // boost
-#include <boost/utility.hpp>
-#include <boost/variant.hpp>
-#include <boost/concept_check.hpp>
+#include <boost/variant/static_visitor.hpp>
+#include <boost/variant/apply_visitor.hpp>
+
 // stl
 #include <set>
-#include <iostream>
 
 namespace mapnik {
 
@@ -42,12 +61,11 @@ struct expression_attributes : boost::static_visitor<void>
     explicit expression_attributes(Container& names)
         : names_(names) {}
 
-    void operator() (value_type const& x) const
+    void operator() (value_type const& /*x*/) const
     {
-        boost::ignore_unused_variable_warning(x);
     }
 
-    void operator() (geometry_type_attribute const& type) const
+    void operator() (geometry_type_attribute const& /*type*/) const
     {
         // do nothing
     }
@@ -87,8 +105,11 @@ private:
 
 struct symbolizer_attributes : public boost::static_visitor<>
 {
-    symbolizer_attributes(std::set<std::string>& names)
-        : names_(names), f_attr(names) {}
+    symbolizer_attributes(std::set<std::string>& names,
+                          double & filter_factor)
+        : names_(names),
+          filter_factor_(filter_factor),
+          f_attr(names) {}
 
     template <typename T>
     void operator () (T const&) const {}
@@ -179,6 +200,11 @@ struct symbolizer_attributes : public boost::static_visitor<>
         {
             boost::apply_visitor(f_attr,*width_expr);
         }
+        path_expression_ptr const& filename_expr = sym.get_filename();
+        if (filename_expr)
+        {
+            path_processor_type::collect_attributes(*filename_expr,names_);
+        }
         collect_transform(sym.get_image_transform());
         collect_transform(sym.get_transform());
     }
@@ -192,10 +218,15 @@ struct symbolizer_attributes : public boost::static_visitor<>
         }
         collect_transform(sym.get_transform());
     }
-    // TODO - support remaining syms
+
+    void operator () (raster_symbolizer const& sym)
+    {
+        filter_factor_ = sym.calculate_filter_factor();
+    }
 
 private:
     std::set<std::string>& names_;
+    double & filter_factor_;
     expression_attributes<std::set<std::string> > f_attr;
     void collect_transform(transform_list_ptr const& trans_expr)
     {
@@ -207,22 +238,24 @@ private:
 };
 
 
-class attribute_collector : public boost::noncopyable
+class attribute_collector : public mapnik::noncopyable
 {
 private:
     std::set<std::string>& names_;
+    double filter_factor_;
     expression_attributes<std::set<std::string> > f_attr;
 public:
 
     attribute_collector(std::set<std::string>& names)
-        : names_(names), f_attr(names) {}
-
+        : names_(names),
+          filter_factor_(1.0),
+          f_attr(names) {}
     template <typename RuleType>
     void operator() (RuleType const& r)
     {
         typename RuleType::symbolizers const& symbols = r.get_symbolizers();
         typename RuleType::symbolizers::const_iterator symIter=symbols.begin();
-        symbolizer_attributes s_attr(names_);
+        symbolizer_attributes s_attr(names_,filter_factor_);
         while (symIter != symbols.end())
         {
             boost::apply_visitor(s_attr,*symIter++);
@@ -231,22 +264,11 @@ public:
         expression_ptr const& expr = r.get_filter();
         boost::apply_visitor(f_attr,*expr);
     }
-};
 
-struct directive_collector : public boost::static_visitor<>
-{
-    directive_collector(double & filter_factor)
-        : filter_factor_(filter_factor) {}
-
-    template <typename T>
-    void operator () (T const&) const {}
-
-    void operator () (raster_symbolizer const& sym)
+    double get_filter_factor() const
     {
-        filter_factor_ = sym.calculate_filter_factor();
+        return filter_factor_;
     }
-private:
-    double & filter_factor_;
 };
 
 } // namespace mapnik
